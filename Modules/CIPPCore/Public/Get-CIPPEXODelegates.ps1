@@ -2,8 +2,7 @@ function Get-CIPPEXODelegates {
     [CmdletBinding()]
     param (
         $TenantFilter,
-        $APIName = 'Get Delegate Permissions List',
-        $ExecutingUser
+        $APIName = 'Get Delegate Permissions List'
     )
 	
 	$result = @()
@@ -41,12 +40,15 @@ function Get-CIPPEXODelegates {
 					}
 				}
 			}
-            Write-Host "Finished processing $($mb.UserPrincipalName) as $mailboxObj"
+            $jsonPermissions = $mailboxObj.Permissions | ConvertTo-Json
+            Write-Host "Finished processing $($mb.UserPrincipalName) as $jsonPermissions"
 			$result += $mailboxObj
 		}
-            Write-Host "Result: $result"
+           
 		# Convert the final result to JSON and output it
-		return $result | ConvertTo-Json -Depth 5
+		$returnResult = $result | ConvertTo-Json -Depth 5
+        Write-Host "Result: $returnResult"
+        return $returnResult
     } catch {
         $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
         return "Error in JW's custom function. "

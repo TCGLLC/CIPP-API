@@ -17,7 +17,7 @@ function Invoke-ListDelegateAccess {
     # Interact with query parameters or the body of the request.
     $TenantFilter = $Request.Query.TenantFilter
 
-    $Output = Get-CIPPEXODelegates -TenantFilter $TenantFilter -ExecutingUser $request.headers.'x-ms-client-principal'
+    $Output = Get-CIPPEXODelegates -TenantFilter $TenantFilter
 
     # Associate values to output bindings by calling 'Push-OutputBinding'.
     Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
