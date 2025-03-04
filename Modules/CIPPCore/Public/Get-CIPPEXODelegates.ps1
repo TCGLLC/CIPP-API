@@ -1,195 +1,128 @@
 function Get-CIPPEXODelegates {
     [CmdletBinding()]
     param (
-        $TenantFilter,
-        $APIName = 'Get Delegate Permissions List'
+        [Parameter(Mandatory = $true)]
+        [string]$TenantFilter,
+        
+        [string]$APIName = 'Get Delegate Permissions List'
     )
-	
-	$result = @()
-
-	$Table = Get-CIPPTable -TableName CachedDelegateAccess
-	$Data = Get-CIPPAzDataTableEntity @Table -Filter "PartitionKey eq '$TenantFilter' and RowKey eq 'CachedResult'"
-    $currentTime = [DateTimeOffset]::UtcNow
     
-    if ($Data -eq $null) {
-        try {    
-            Write-Host 'Fetching Mailboxes.'
-            $Mailboxes = New-ExoRequest -tenantid $TenantFilter -cmdlet 'Get-Mailbox' 
+    # Retrieve the table and overall cached entity
+    $Table = Get-CIPPTable -TableName CachedDelegateAccess
+    $cacheFilter = "PartitionKey eq '$TenantFilter' and RowKey eq 'CachedResult'"
+    $CachedEntity = Get-CIPPAzDataTableEntity @Table -Filter $cacheFilter
+    $currentTime = [DateTimeOffset]::UtcNow
+    $cacheUpdateNeeded = $false
 
-		    foreach ($mb in $mailboxes) {
-                try {
-		            Write-Host "Processing  $($mb.UserPrincipalName)"
-			        $mailboxObj = [PSCustomObject]@{
-				        UPN                 = $mb.UserPrincipalName
-				        PrimarySmtpAddress  = $mb.PrimarySmtpAddress
-				        Permissions         = @()
-			        }
-                    $UserData = Get-CIPPAzDataTableEntity @Table -Filter "PartitionKey eq '$TenantFilter' and RowKey eq '$($mb.UserPrincipalName)'"
-                    if($UserData.FinishTimestamp) {
-                        $finishTime = [DateTimeOffset]$UserData.FinishTimestamp
-                        $timeDiff = $currentTime - $finishTime
-                        if ($timeDiff.TotalHours -ge 2) {
-                            Write-Verbose "Cache entry is older than 2 hours. Update needed."
-                            $userUpdateNeeded = $true
-                        }
-                        if(!$userUpdateNeeded) {
-                            $result += $UserData.Data
-                            continue
-                        }
-
-                    }
-			
-			        $fullAccessRaw = New-ExoRequest -tenantid $TenantFilter -cmdlet 'Get-MailboxPermission' -cmdParams @{Identity = $mb.Identity } -Anchor $mb.Identity
-
-			        $fullAccess = $fullAccessRaw | Where-Object {
-				        $_.User -and $_.User.ToString() -notlike "NT AUTHORITY\SELF"
-			        }
-			        foreach ($perm in $fullAccess) {
-				        $mailboxObj.Permissions += [PSCustomObject]@{
-					        Delegate     = $perm.User.ToString()
-					        AccessRights = ($perm.AccessRights -join ", ")
-				        }
-			        }
-
-			        if ($mb.GrantSendOnBehalfTo) {
-				        foreach ($delegate in $mb.GrantSendOnBehalfTo) {
-					        $mailboxObj.Permissions += [PSCustomObject]@{
-						        Delegate     = $delegate.ToString()
-						        AccessRights = "SendOnBehalf"
-					        }
-				        }
-			        }
-                    $UserData = @{
-				            PartitionKey = "$TenantFilter"
-				            RowKey       = "$($mb.UserPrincipalName)"
-                            FinishTimestamp = [DateTimeOffset]::UtcNow
-				            Data         = [string](ConvertTo-Json -InputObject $mailboxObj -Depth 10 -Compress)
-			        }
-                    Add-CIPPAzDataTableEntity @Table -Entity $UserData -Force
-                    if($mailboxObj.Permissions.Count -eq 0) {
-                    
-                    } else { 
-                        $jsonPermissions = $mailboxObj.Permissions | ConvertTo-Json
-                        Write-Host "Finished processing $($mb.UserPrincipalName) as $jsonPermissions"
-			            $result += $mailboxObj
-                    }
-                } catch {
-                    Write-Host "Failed to process mailbox data: $($mb.UserPrincipalName)"
+    # Check if overall cache exists and is recent (< 2 hours)
+    if ($CachedEntity -ne $null -and $CachedEntity.FinishTimestamp) {
+        $cacheFinishTime = [DateTimeOffset]$CachedEntity.FinishTimestamp
+        if (($currentTime - $cacheFinishTime).TotalHours -ge 2) {
+            Write-Verbose "Overall cache is older than 2 hours. Update needed."
+            $cacheUpdateNeeded = $true
+        }
+    }
+    else {
+        $cacheUpdateNeeded = $true
+    }
+    
+    # Helper function: Processes all mailboxes and returns a results array
+    function Process-Mailboxes {
+        $result = @()
+        Write-Host 'Fetching Mailboxes.'
+        $Mailboxes = New-ExoRequest -tenantid $TenantFilter -cmdlet 'Get-Mailbox'
+    
+        foreach ($mb in $Mailboxes) {
+            try {
+                Write-Host "Processing $($mb.UserPrincipalName)"
+                $mailboxObj = [PSCustomObject]@{
+                    UPN                = $mb.UserPrincipalName
+                    PrimarySmtpAddress = $mb.PrimarySmtpAddress
+                    Permissions        = @()
                 }
-		    }
-           
-		    # Convert the final result to JSON and output it
-		    $returnResult = $result | ConvertTo-Json -Depth 5
+    
+                # Check for a cached mailbox entry
+                $userFilter = "PartitionKey eq '$TenantFilter' and RowKey eq '$($mb.UserPrincipalName)'"
+                $UserData = Get-CIPPAzDataTableEntity @Table -Filter $userFilter
+                if ($UserData -ne $null -and $UserData.FinishTimestamp) {
+                    $userFinishTime = [DateTimeOffset]$UserData.FinishTimestamp
+                    if (($currentTime - $userFinishTime).TotalHours -lt 2) {
+                        # Use cached data if still valid
+                        $cachedMailbox = $UserData.Data | ConvertFrom-Json
+                        if($cachedMailbox.Permissions.Count -gt 0) {
+                            $result += $cachedMailbox
+                        }
+                        continue
+                    }
+                }
+    
+                # Retrieve full access permissions
+                $fullAccessRaw = New-ExoRequest -tenantid $TenantFilter -cmdlet 'Get-MailboxPermission' -cmdParams @{Identity = $mb.Identity} -Anchor $mb.Identity
+                $fullAccess = $fullAccessRaw | Where-Object {
+                    $_.User -and $_.User.ToString() -notlike "NT AUTHORITY\SELF"
+                }
+                foreach ($perm in $fullAccess) {
+                    $mailboxObj.Permissions += [PSCustomObject]@{
+                        Delegate     = $perm.User.ToString()
+                        AccessRights = ($perm.AccessRights -join ", ")
+                    }
+                }
+    
+                # Retrieve send-on-behalf permissions if available
+                if ($mb.GrantSendOnBehalfTo) {
+                    foreach ($delegate in $mb.GrantSendOnBehalfTo) {
+                        $mailboxObj.Permissions += [PSCustomObject]@{
+                            Delegate     = $delegate.ToString()
+                            AccessRights = "SendOnBehalf"
+                        }
+                    }
+                }
+    
+                # Cache individual mailbox result
+                $userCacheEntity = @{
+                    PartitionKey    = "$TenantFilter"
+                    RowKey          = "$($mb.UserPrincipalName)"
+                    FinishTimestamp = [DateTimeOffset]::UtcNow
+                    Data            = [string](ConvertTo-Json -InputObject $mailboxObj -Depth 10 -Compress)
+                }
+                Add-CIPPAzDataTableEntity @Table -Entity $userCacheEntity -Force
+    
+                if ($mailboxObj.Permissions.Count -gt 0) {
+                    $jsonPermissions = $mailboxObj.Permissions | ConvertTo-Json
+                    Write-Host "Finished processing $($mb.UserPrincipalName) as $jsonPermissions"
+                    $result += $mailboxObj
+                }
+            }
+            catch {
+                Write-Host "Failed to process mailbox data: $($mb.UserPrincipalName)"
+            }
+        }
+        return $result
+    }
+    
+    # If cache update is needed, process mailboxes, update overall cache, and return fresh data.
+    if ($cacheUpdateNeeded) {
+        try {
+            $result = Process-Mailboxes
+            $returnResult = $result | ConvertTo-Json -Depth 5
             Write-Host "Result: $returnResult"
-            $Data = @{
-				PartitionKey = "$TenantFilter"
-				RowKey       = "CachedResult"
+            $cacheEntity = @{
+                PartitionKey    = "$TenantFilter"
+                RowKey          = "CachedResult"
                 FinishTimestamp = [DateTimeOffset]::UtcNow
-				Data         = [string](ConvertTo-Json -InputObject $result -Depth 10 -Compress)
-			}
-            Add-CIPPAzDataTableEntity @Table -Entity $Data -Force
+                Data            = [string](ConvertTo-Json -InputObject $result -Depth 10 -Compress)
+            }
+            Add-CIPPAzDataTableEntity @Table -Entity $cacheEntity -Force
             return $returnResult
-        } catch {
+        }
+        catch {
             $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
             Write-Host "Result: $ErrorMessage"
             return "Error in JW's custom function. "
         }
-    } else {
-        if($Data.FinishTimestamp) {
-            $finishTime = [DateTimeOffset]$Data.FinishTimestamp
-            $timeDiff = $currentTime - $finishTime
-            if ($timeDiff.TotalHours -ge 2) {
-                Write-Verbose "Cache entry is older than 2 hours. Update needed."
-                $updateNeeded = $true
-            }
-       }
-       if($updateNeeded) {
-            try {    
-                    Write-Host 'Fetching Mailboxes.'
-                    $Mailboxes = New-ExoRequest -tenantid $TenantFilter -cmdlet 'Get-Mailbox' 
-
-		            foreach ($mb in $mailboxes) {
-                        try {
-		                    Write-Host "Processing  $($mb.UserPrincipalName)"
-			                $mailboxObj = [PSCustomObject]@{
-				                UPN                 = $mb.UserPrincipalName
-				                PrimarySmtpAddress  = $mb.PrimarySmtpAddress
-				                Permissions         = @()
-			                }
-
-                            $UserData = Get-CIPPAzDataTableEntity @Table -Filter "PartitionKey eq '$TenantFilter' and RowKey eq '$($mb.UserPrincipalName)'"
-                            if($UserData.FinishTimestamp) {
-                                $finishTime = [DateTimeOffset]$UserData.FinishTimestamp
-                                $timeDiff = $currentTime - $finishTime
-                                if ($timeDiff.TotalHours -ge 2) {
-                                    Write-Verbose "Cache entry is older than 2 hours. Update needed."
-                                    $userUpdateNeeded = $true
-                                }
-                                if(!$userUpdateNeeded) {
-                                    $result += $UserData.Data
-                                    continue
-                                }
-
-                            }
-			
-			                $fullAccessRaw = New-ExoRequest -tenantid $TenantFilter -cmdlet 'Get-MailboxPermission' -cmdParams @{Identity = $mb.Identity } -Anchor $mb.Identity
-
-			                $fullAccess = $fullAccessRaw | Where-Object {
-				                $_.User -and $_.User.ToString() -notlike "NT AUTHORITY\SELF"
-			                }
-			                foreach ($perm in $fullAccess) {
-				                $mailboxObj.Permissions += [PSCustomObject]@{
-					                Delegate     = $perm.User.ToString()
-					                AccessRights = ($perm.AccessRights -join ", ")
-				                }
-			                }
-
-			                if ($mb.GrantSendOnBehalfTo) {
-				                foreach ($delegate in $mb.GrantSendOnBehalfTo) {
-					                $mailboxObj.Permissions += [PSCustomObject]@{
-						                Delegate     = $delegate.ToString()
-						                AccessRights = "SendOnBehalf"
-					                }
-				                }
-			                }
-                            $UserData = @{
-				                    PartitionKey = "$TenantFilter"
-				                    RowKey       = "$($mb.UserPrincipalName)"
-                                    FinishTimestamp = [DateTimeOffset]::UtcNow
-				                    Data         = [string](ConvertTo-Json -InputObject $mailboxObj -Depth 10 -Compress)
-			                }
-                            Add-CIPPAzDataTableEntity @Table -Entity $UserData -Force
-                            if($mailboxObj.Permissions.Count -eq 0) {
-                    
-                            } else { 
-                                $jsonPermissions = $mailboxObj.Permissions | ConvertTo-Json
-                                Write-Host "Finished processing $($mb.UserPrincipalName) as $jsonPermissions"
-
-			                    $result += $mailboxObj
-                            }
-                        } catch {
-                            Write-Host "Failed to process mailbox data: $($mb.UserPrincipalName)"
-                        }
-		            }
-           
-		            # Convert the final result to JSON and output it
-		            $returnResult = $result | ConvertTo-Json -Depth 5
-                    Write-Host "Result: $returnResult"
-                    $Data = @{
-				        PartitionKey = "$TenantFilter"
-				        RowKey       = "CachedResult"
-                        FinishTimestamp = [DateTimeOffset]::UtcNow
-				        Data         = [string](ConvertTo-Json -InputObject $result -Depth 10 -Compress)
-			        }
-                    Add-CIPPAzDataTableEntity @Table -Entity $Data -Force
-                    return $returnResult
-                } catch {
-                    $ErrorMessage = Get-NormalizedError -Message $_.Exception.Message
-                    Write-Host "Result: $ErrorMessage"
-                    return "Error in JW's custom function. "
-                }
-       } else {
-            return $Data.Data
-       }
+    }
+    else {
+        # Return cached overall result if it's still fresh.
+        return $CachedEntity.Data
     }
 }
