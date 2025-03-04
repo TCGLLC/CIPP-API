@@ -8,10 +8,13 @@ function Get-CIPPEXODelegates {
 	
 	$result = @()
 
-    try {
+    try {    
+        Write-Host 'Fetching Mailboxes.'
         $Mailboxes = New-ExoRequest -tenantid $TenantFilter -cmdlet 'Get-Mailbox' 
-		
+
 		foreach ($mb in $mailboxes) {
+            
+		    Write-Host 'Processing  $($mb.UserPrincipalName)'
 			$mailboxObj = [PSCustomObject]@{
 				UPN                 = $mb.UserPrincipalName
 				PrimarySmtpAddress  = $mb.PrimarySmtpAddress
@@ -38,7 +41,7 @@ function Get-CIPPEXODelegates {
 					}
 				}
 			}
-
+            Write-Host 'Finished processing $($mb.UserPrincipalName) as $mailboxObj'
 			$result += $mailboxObj
 		}
 
