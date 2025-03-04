@@ -9,7 +9,7 @@ function Get-CIPPEXODelegates {
 
 	$Table = Get-CIPPTable -TableName CachedDelegateAccess
 	$Data = Get-CIPPAzDataTableEntity @Table -Filter "PartitionKey eq '$TenantFilter' and RowKey eq 'CachedResult'"
-    $currentTime = Get-Date -AsUTC
+    $currentTime = [DateTimeOffset]::UtcNow
     
     if ($Data -eq $null) {
         try {    
@@ -75,7 +75,7 @@ function Get-CIPPEXODelegates {
         }
     } else {
         if($Data.FinishTimestamp) {
-            $finishTime = [datetime]$Data.FinishTimestamp
+            $finishTime = [DateTimeOffset]$Data.FinishTimestamp
             $timeDiff = $currentTime - $finishTime
             if ($timeDiff.TotalHours -ge 2) {
                 Write-Verbose "Cache entry is older than 2 hours. Update needed."
