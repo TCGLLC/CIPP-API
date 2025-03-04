@@ -24,6 +24,20 @@ function Get-CIPPEXODelegates {
 				        PrimarySmtpAddress  = $mb.PrimarySmtpAddress
 				        Permissions         = @()
 			        }
+                    $UserData = Get-CIPPAzDataTableEntity @Table -Filter "PartitionKey eq '$TenantFilter' and RowKey eq '$($mb.UserPrincipalName)'"
+                    if($UserData.FinishTimestamp) {
+                        $finishTime = [DateTimeOffset]$UserData.FinishTimestamp
+                        $timeDiff = $currentTime - $finishTime
+                        if ($timeDiff.TotalHours -ge 2) {
+                            Write-Verbose "Cache entry is older than 2 hours. Update needed."
+                            $userUpdateNeeded = $true
+                        }
+                        if(!$userUpdateNeeded) {
+                            $result += $UserData.Data
+                            continue
+                        }
+
+                    }
 			
 			        $fullAccessRaw = New-ExoRequest -tenantid $TenantFilter -cmdlet 'Get-MailboxPermission' -cmdParams @{Identity = $mb.Identity } -Anchor $mb.Identity
 
@@ -50,6 +64,13 @@ function Get-CIPPEXODelegates {
                     } else { 
                         $jsonPermissions = $mailboxObj.Permissions | ConvertTo-Json
                         Write-Host "Finished processing $($mb.UserPrincipalName) as $jsonPermissions"
+                        $UserData = @{
+				            PartitionKey = "$TenantFilter"
+				            RowKey       = "$($mb.UserPrincipalName)"
+                            FinishTimestamp = [DateTimeOffset]::UtcNow
+				            Data         = [string](ConvertTo-Json -InputObject $mailboxObj -Depth 10 -Compress)
+			            }
+                        Add-CIPPAzDataTableEntity @Table -Entity $UserData -Force
 			            $result += $mailboxObj
                     }
                 } catch {
@@ -95,6 +116,21 @@ function Get-CIPPEXODelegates {
 				                PrimarySmtpAddress  = $mb.PrimarySmtpAddress
 				                Permissions         = @()
 			                }
+
+                            $UserData = Get-CIPPAzDataTableEntity @Table -Filter "PartitionKey eq '$TenantFilter' and RowKey eq '$($mb.UserPrincipalName)'"
+                            if($UserData.FinishTimestamp) {
+                                $finishTime = [DateTimeOffset]$UserData.FinishTimestamp
+                                $timeDiff = $currentTime - $finishTime
+                                if ($timeDiff.TotalHours -ge 2) {
+                                    Write-Verbose "Cache entry is older than 2 hours. Update needed."
+                                    $userUpdateNeeded = $true
+                                }
+                                if(!$userUpdateNeeded) {
+                                    $result += $UserData.Data
+                                    continue
+                                }
+
+                            }
 			
 			                $fullAccessRaw = New-ExoRequest -tenantid $TenantFilter -cmdlet 'Get-MailboxPermission' -cmdParams @{Identity = $mb.Identity } -Anchor $mb.Identity
 
@@ -121,6 +157,13 @@ function Get-CIPPEXODelegates {
                             } else { 
                                 $jsonPermissions = $mailboxObj.Permissions | ConvertTo-Json
                                 Write-Host "Finished processing $($mb.UserPrincipalName) as $jsonPermissions"
+                                $UserData = @{
+				                    PartitionKey = "$TenantFilter"
+				                    RowKey       = "$($mb.UserPrincipalName)"
+                                    FinishTimestamp = [DateTimeOffset]::UtcNow
+				                    Data         = [string](ConvertTo-Json -InputObject $mailboxObj -Depth 10 -Compress)
+			                    }
+                                Add-CIPPAzDataTableEntity @Table -Entity $UserData -Force
 			                    $result += $mailboxObj
                             }
                         } catch {
