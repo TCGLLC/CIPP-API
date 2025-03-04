@@ -63,7 +63,7 @@ function Get-CIPPEXODelegates {
             $Data = @{
 				PartitionKey = "$TenantFilter"
 				RowKey       = "CachedResult"
-                FinishTimestamp = $currentTime
+                FinishTimestamp = [DateTimeOffset]::UtcNow
 				Data         = [string](ConvertTo-Json -InputObject $result -Depth 10 -Compress)
 			}
             Add-CIPPAzDataTableEntity @Table -Entity $Data -Force
@@ -134,7 +134,7 @@ function Get-CIPPEXODelegates {
                     $Data = @{
 				        PartitionKey = "$TenantFilter"
 				        RowKey       = "CachedResult"
-                        FinishTimestamp = $currentTime
+                        FinishTimestamp = [DateTimeOffset]::UtcNow
 				        Data         = [string](ConvertTo-Json -InputObject $result -Depth 10 -Compress)
 			        }
                     Add-CIPPAzDataTableEntity @Table -Entity $Data -Force
