@@ -14,7 +14,7 @@ function Get-CIPPEXODelegates {
 
 		foreach ($mb in $mailboxes) {
             
-		    Write-Host 'Processing  $($mb.UserPrincipalName)'
+		    Write-Host "Processing  $($mb.UserPrincipalName)"
 			$mailboxObj = [PSCustomObject]@{
 				UPN                 = $mb.UserPrincipalName
 				PrimarySmtpAddress  = $mb.PrimarySmtpAddress
@@ -41,10 +41,10 @@ function Get-CIPPEXODelegates {
 					}
 				}
 			}
-            Write-Host 'Finished processing $($mb.UserPrincipalName) as $mailboxObj'
+            Write-Host "Finished processing $($mb.UserPrincipalName) as $mailboxObj"
 			$result += $mailboxObj
 		}
-
+            Write-Host "Result: $result"
 		# Convert the final result to JSON and output it
 		return $result | ConvertTo-Json -Depth 5
     } catch {
