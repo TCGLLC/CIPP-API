@@ -59,18 +59,18 @@ function Get-CIPPEXODelegates {
 					        }
 				        }
 			        }
+                    $UserData = @{
+				            PartitionKey = "$TenantFilter"
+				            RowKey       = "$($mb.UserPrincipalName)"
+                            FinishTimestamp = [DateTimeOffset]::UtcNow
+				            Data         = [string](ConvertTo-Json -InputObject $mailboxObj -Depth 10 -Compress)
+			        }
+                    Add-CIPPAzDataTableEntity @Table -Entity $UserData -Force
                     if($mailboxObj.Permissions.Count -eq 0) {
                     
                     } else { 
                         $jsonPermissions = $mailboxObj.Permissions | ConvertTo-Json
                         Write-Host "Finished processing $($mb.UserPrincipalName) as $jsonPermissions"
-                        $UserData = @{
-				            PartitionKey = "$TenantFilter"
-				            RowKey       = "$($mb.UserPrincipalName)"
-                            FinishTimestamp = [DateTimeOffset]::UtcNow
-				            Data         = [string](ConvertTo-Json -InputObject $mailboxObj -Depth 10 -Compress)
-			            }
-                        Add-CIPPAzDataTableEntity @Table -Entity $UserData -Force
 			            $result += $mailboxObj
                     }
                 } catch {
@@ -152,18 +152,19 @@ function Get-CIPPEXODelegates {
 					                }
 				                }
 			                }
+                            $UserData = @{
+				                    PartitionKey = "$TenantFilter"
+				                    RowKey       = "$($mb.UserPrincipalName)"
+                                    FinishTimestamp = [DateTimeOffset]::UtcNow
+				                    Data         = [string](ConvertTo-Json -InputObject $mailboxObj -Depth 10 -Compress)
+			                }
+                            Add-CIPPAzDataTableEntity @Table -Entity $UserData -Force
                             if($mailboxObj.Permissions.Count -eq 0) {
                     
                             } else { 
                                 $jsonPermissions = $mailboxObj.Permissions | ConvertTo-Json
                                 Write-Host "Finished processing $($mb.UserPrincipalName) as $jsonPermissions"
-                                $UserData = @{
-				                    PartitionKey = "$TenantFilter"
-				                    RowKey       = "$($mb.UserPrincipalName)"
-                                    FinishTimestamp = [DateTimeOffset]::UtcNow
-				                    Data         = [string](ConvertTo-Json -InputObject $mailboxObj -Depth 10 -Compress)
-			                    }
-                                Add-CIPPAzDataTableEntity @Table -Entity $UserData -Force
+
 			                    $result += $mailboxObj
                             }
                         } catch {
