@@ -5,7 +5,7 @@ Function Invoke-ExecNamedLocation {
     .FUNCTIONALITY
         Entrypoint
     .ROLE
-        Tenant.ConditionalAccess.ReadWrite
+        Tenant.ConditionalAccess.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
