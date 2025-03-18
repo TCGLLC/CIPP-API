@@ -5,7 +5,7 @@ Function Invoke-ExecCAExclusion {
     .FUNCTIONALITY
         Entrypoint
     .ROLE
-        Tenant.ConditionalAccess.ReadWrite
+        Tenant.ConditionalAccess.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
