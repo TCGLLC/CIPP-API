@@ -5,7 +5,7 @@ Function Invoke-AddScheduledItem {
     .FUNCTIONALITY
         Entrypoint
     .ROLE
-        CIPP.Scheduler.ReadWrite
+        CIPP.Scheduler.Read
     #>
     [CmdletBinding()]
     param($Request, $TriggerMetadata)
