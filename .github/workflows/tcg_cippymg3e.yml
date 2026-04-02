@@ -13,11 +13,22 @@ env:
   AZURE_FUNCTIONAPP_PACKAGE_PATH: '.' # set this to the path to your web app project, defaults to the repository root
 
 jobs:
-  build-and-deploy:
-    runs-on: windows-latest
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write #This is required for requesting the JWT
+      contents: read #This is required for actions/checkout
+
     steps:
       - name: 'Checkout GitHub Action'
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
+      
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_815F0BFA6B1746CB94A456AF01D00BC0 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_8ABAB494BC0540F2AD76866CA621AFAD }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_6DEA4BC8531D448A81B0BD3EF0522F4C }}
 
       - name: 'Run Azure Functions Action'
         uses: Azure/functions-action@v1
@@ -26,4 +37,4 @@ jobs:
           app-name: 'cippymg3e'
           slot-name: 'Production'
           package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_9D59E365408143E99B8AC5C66D5F8750 }}
+          
